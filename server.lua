@@ -1,13 +1,12 @@
 local discordBotToken = Config.BotToken
 local guildId = Config.GuildId
 
--- Function to get the Discord member's nickname
 local function getDiscordNickname(discordId, callback)
     local url = string.format("https://discord.com/api/v10/guilds/%s/members/%s", guildId, discordId)
     local headers = {
         ["Authorization"] = "Bot " .. discordBotToken
     }
-    
+
     PerformHttpRequest(url, function (errorCode, resultData, resultHeaders)
         if errorCode == 200 then
             local data = json.decode(resultData)
@@ -18,35 +17,53 @@ local function getDiscordNickname(discordId, callback)
     end, "GET", "", headers)
 end
 
+function GetPlayerDiscordId(playerId, callback)
+    local identifiers = GetPlayerIdentifiers(playerId)
+    local discordId = nil
+
+    for _, id in ipairs(identifiers) do
+        if string.match(id, "discord:") then
+            discordId = string.gsub(id, "discord:", "")
+            break
+        end
+    end
+
+    if discordId then
+        callback(discordId)
+    else
+        callback(nil)
+    end
+end
+
 AddEventHandler('playerConnecting', function(name, setCallback, deferrals)
     local playerId = source
-    local src = source
-    local license
-    local discordId
+    print("Player connecting: " .. name .. " (ID: " .. playerId .. ")")
 
-    
-    for _, identifier in ipairs(GetPlayerIdentifiers(src)) do
-        if string.match(identifier, "license:") then
-            license = identifier
-        elseif string.match(identifier, "discord:") then
-            discordId = string.gsub(identifier, "discord:", "")
+    deferrals.defer()
+
+    GetPlayerDiscordId(playerId, function(discordId)
+        if not discordId then
+            print("Discord ID not found for player ID: " .. playerId)
+            deferrals.done("You need to link your Discord account to your FiveM account.")
+            return
         end
-    end
 
-    if not discordId then
-        deferrals.done("You need to link your Discord account to your FiveM account.")
-        return
-    end
-    
-    getDiscordNickname(discordId, function(nickname)
-        if nickname then
-            if nickname == name then
-                deferrals.done() -- Allow player to connect
+        print("Fetching Discord nickname for ID: " .. discordId)
+        getDiscordNickname(discordId, function(nickname)
+            if nickname then
+                print("Fetched Discord nickname: " .. nickname)
+                if nickname == name then
+                    print("Nickname matches FiveM username. Allowing connection.")
+                    deferrals.done()
+                    sendToDiscord()
+                else
+                    print("Nickname does not match FiveM username. Denying connection.")
+                    deferrals.done("Your Discord nickname does not match your FiveM username.")
+                end
             else
-                deferrals.done("Your Discord nickname does not match your FiveM username.")
+                print("Failed to retrieve Discord nickname for ID: " .. discordId)
+                deferrals.done("Failed to retrieve your Discord nickname.")
             end
-        else
-            deferrals.done("Failed to retrieve your Discord nickname.")
-        end
+        end)
     end)
 end)
